@@ -18,8 +18,10 @@ package glog
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	stdLog "log"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -143,6 +145,9 @@ func TestInfoDepth(t *testing.T) {
 }
 
 func init() {
+	flagset := flag.NewFlagSet("", flag.ExitOnError)
+	Setup(flagset)
+	flagset.Parse(os.Args[1:])
 	CopyStandardLogTo("INFO")
 }
 
