@@ -88,6 +88,8 @@ import (
 	"time"
 )
 
+const FlushTimeout = 10 * time.Second
+
 // severity identifies the sort of log: info, warning etc. It also implements
 // the flag.Value interface. The -stderrthreshold flag is of type severity and
 // should be modified only through the flag.Value interface. The values match
@@ -525,7 +527,7 @@ It returns a buffer containing the formatted header and the user's file and line
 The depth specifies how many stack frames above lives the source line to be identified in the log message.
 
 Log lines have this form:
-	Lmmdd hh:mm:ss.uuuuuu threadid file:line] msg...
+	Lmmdd hh:mm:ss.uuu threadid file:line| msg...
 where the fields are defined as follows:
 	L                A single character, representing the log level (eg 'I' for INFO)
 	mm               The month (zero padded; ie May is '05')
@@ -576,15 +578,15 @@ func (l *loggingT) formatHeader(s severity, file string, line int) *buffer {
 	buf.tmp[11] = ':'
 	buf.twoDigits(12, second)
 	buf.tmp[14] = '.'
-	buf.nDigits(6, 15, now.Nanosecond()/1000, '0')
-	buf.tmp[21] = ' '
-	buf.nDigits(7, 22, pid, ' ') // TODO: should be TID
-	buf.tmp[29] = ' '
-	buf.Write(buf.tmp[:30])
+	buf.nDigits(3, 15, now.Nanosecond()/1000, '0')
+	buf.tmp[18] = ' '
+	n := buf.someDigits(19, pid) // TODO: should be TID
+	buf.tmp[19+n+1] = ' '
+	buf.Write(buf.tmp[:19+n+1])
 	buf.WriteString(file)
 	buf.tmp[0] = ':'
-	n := buf.someDigits(1, line)
-	buf.tmp[n+1] = ']'
+	n = buf.someDigits(1, line)
+	buf.tmp[n+1] = '|'
 	buf.tmp[n+2] = ' '
 	buf.Write(buf.tmp[:n+3])
 	return buf
@@ -713,7 +715,7 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 		// If we got here via Exit rather than Fatal, print no stacks.
 		if atomic.LoadUint32(&fatalNoStacks) > 0 {
 			l.mu.Unlock()
-			timeoutFlush(10 * time.Second)
+			timeoutFlush(FlushTimeout)
 			os.Exit(1)
 		}
 		// Dump all goroutine stacks before exiting.
@@ -732,7 +734,7 @@ func (l *loggingT) output(s severity, buf *buffer, file string, line int, alsoTo
 			}
 		}
 		l.mu.Unlock()
-		timeoutFlush(10 * time.Second)
+		timeoutFlush(FlushTimeout)
 		os.Exit(255) // C++ uses -1, which is silly because it's anded with 255 anyway.
 	}
 	l.putBuffer(buf)
@@ -849,7 +851,7 @@ func (sb *syncBuffer) rotateFile(now time.Time) error {
 	fmt.Fprintf(&buf, "Log file created at: %s\n", now.Format("2006/01/02 15:04:05"))
 	fmt.Fprintf(&buf, "Running on machine: %s\n", host)
 	fmt.Fprintf(&buf, "Binary: Built with %s %s for %s/%s\n", runtime.Compiler, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(&buf, "Log line format: [IWEF]mmdd hh:mm:ss.uuuuuu threadid file:line] msg\n")
+	fmt.Fprintf(&buf, "Log line format: [IWEF]mmdd hh:mm:ss.uuu threadid file:line| msg\n")
 	n, err := sb.file.Write(buf.Bytes())
 	sb.nbytes += uint64(n)
 	return err
